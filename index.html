@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Recycling Assistant | Code Clash 2.0</title>
+  
+  <!-- Fonts & Tailwind CSS (vendored locally — runs fully offline) -->
+  <link href="/vendor/fonts/fonts.css" rel="stylesheet">
+  <script src="/vendor/tailwind.js"></script>
+
+  <!-- TensorFlow.js & COCO-SSD Deep Learning Object Detection (vendored locally) -->
+  <script src="/vendor/tf.min.js"></script>
+  <script src="/vendor/coco-ssd.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            cyber: {
+              950: '#05080f',
+              900: '#0b1320',
+              850: '#0f172a',
+              800: '#1e293b',
+              700: '#334155',
+              accent: '#06b6d4',
+              emerald: '#10b981',
+              warning: '#f59e0b',
+              rose: '#f43f5e',
+              lime: '#84cc16'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #060911;
+      color: #f8fafc;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.08) 0px, transparent 40%),
+        radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 40%),
+        radial-gradient(at 50% 100%, rgba(139, 92, 246, 0.05) 0px, transparent 50%);
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(51, 65, 85, 0.6);
+    }
+    .glass-panel-glow {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      box-shadow: 0 0 25px -5px rgba(6, 182, 212, 0.15);
+    }
+    .scan-reticle {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      background: linear-gradient(rgba(6, 182, 212, 0.05) 50%, rgba(0, 0, 0, 0.1) 50%);
+      background-size: 100% 4px;
+    }
+    @keyframes scan-laser {
+      0% { top: 5%; opacity: 0.8; }
+      50% { top: 92%; opacity: 0.9; }
+      100% { top: 5%; opacity: 0.8; }
+    }
+    .laser-line {
+      position: absolute;
+      left: 5%;
+      width: 90%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #06b6d4, #10b981, transparent);
+      box-shadow: 0 0 10px #06b6d4;
+      animation: scan-laser 3.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- TOP HEADER -->
+  <header class="glass-panel sticky top-0 z-50 border-b border-slate-800/80 px-6 py-3.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-xl font-bold">
+          ♻️
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/60 font-semibold uppercase tracking-wider">
+              Code Clash 2.0 • PS-06
+            </span>
+            <span id="model-status-indicator" class="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">
+              ● Neural Network Ready
+            </span>
+          </div>
+          <h1 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+            Smart Recycling Assistant
+            <span class="text-xs font-normal text-slate-400 font-mono">| Computer Vision • Digital Twin • GenAI</span>
+          </h1>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="flex items-center gap-2.5 text-xs">
+        <button id="btn-toggle-voice" class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-400 border border-slate-700 font-medium transition flex items-center gap-1">
+          🔊 Voice: ON
+        </button>
+        <button id="btn-toggle-stream-sim" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30 font-medium transition-all flex items-center gap-1.5 shadow">
+          ⚡ Simulate Live Conveyor Stream
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- TELEMETRY STATS BANNER -->
+  <section class="max-w-7xl mx-auto w-full px-6 pt-5 pb-3">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <!-- Landfill Diversion Rate -->
+      <div class="glass-panel p-3.5 rounded-xl border-l-4 border-l-emerald-500">
+        <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Diversion Rate</span>
+        <div class="text-xl font-extrabold text-emerald-400 font-mono mt-0.5" id="metric-diversion-rate">94.2%</div>
+        <span class="text-[10px] text-slate-500">Diverted from Landfill</span>
+      </div>
+
+      <!-- Total Scanned -->
+      <div class="glass-panel p-3.5 rounded-xl border-l-4 border-l-cyan-500">
+        <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Items Processed</span>
+        <div class="text-xl font-extrabold text-cyan-400 font-mono mt-0.5" id="metric-total-scanned">24</div>
+        <span class="text-[10px] text-slate-500">Vision classified</span>
+      </div>
+
+      <!-- Total Mass -->
+      <div class="glass-panel p-3.5 rounded-xl border-l-4 border-l-amber-500">
+        <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Total Mass</span>
+        <div class="text-xl font-extrabold text-amber-400 font-mono mt-0.5" id="metric-total-mass">5.42 kg</div>
+        <span class="text-[10px] text-slate-500">Recovered material</span>
+      </div>
+
+      <!-- CO2 Avoided -->
+      <div class="glass-panel p-3.5 rounded-xl border-l-4 border-l-lime-500">
+        <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">CO₂ Avoided</span>
+        <div class="text-xl font-extrabold text-lime-400 font-mono mt-0.5" id="metric-co2-avoided">12.85 kg</div>
+        <span class="text-[10px] text-slate-500">Emissions prevented</span>
+      </div>
+
+      <!-- Water Saved -->
+      <div class="glass-panel p-3.5 rounded-xl border-l-4 border-l-sky-500">
+        <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Water Saved</span>
+        <div class="text-xl font-extrabold text-sky-400 font-mono mt-0.5" id="metric-water-saved">182 L</div>
+        <span class="text-[10px] text-slate-500">Production conserved</span>
+      </div>
+
+      <!-- Energy Saved -->
+      <div class="glass-panel p-3.5 rounded-xl border-l-4 border-l-purple-500">
+        <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Energy Saved</span>
+        <div class="text-xl font-extrabold text-purple-400 font-mono mt-0.5" id="metric-energy-saved">34.6 kWh</div>
+        <span class="text-[10px] text-slate-500">Grid power saved</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAIN 3-COLUMN INTERFACE -->
+  <main class="max-w-7xl mx-auto w-full px-6 py-3 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- ============================================== -->
+    <!-- COLUMN 1: COMPUTER VISION SCANNER (4 COLS) -->
+    <!-- ============================================== -->
+    <div class="lg:col-span-4 flex flex-col gap-4">
+      
+      <!-- Vision Viewfinder Box -->
+      <div class="glass-panel-glow rounded-2xl p-4 flex flex-col relative overflow-hidden">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wider">CV Neural Scanner</h2>
+          </div>
+          <span class="text-[11px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+            TensorFlow.js
+          </span>
+        </div>
+
+        <!-- Camera / Preview Container -->
+        <div class="relative w-full aspect-[4/3] rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center group">
+          <!-- Live Video -->
+          <video id="webcam-video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover hidden"></video>
+          
+          <!-- Image Upload Preview -->
+          <img id="preview-image" alt="Scanned item preview" class="absolute inset-0 w-full h-full object-contain hidden bg-slate-950 p-2" />
+
+          <!-- Placeholder when camera is idle -->
+          <div id="camera-placeholder" class="flex flex-col items-center justify-center p-6 text-center">
+            <div class="h-14 w-14 rounded-full bg-slate-900 border border-slate-700/60 flex items-center justify-center text-2xl text-cyan-400 mb-3 group-hover:scale-105 transition-transform">
+              📷
+            </div>
+            <p class="text-xs text-slate-300 font-medium">Camera in Standby</p>
+            <p class="text-[11px] text-slate-500 mt-1 max-w-[210px]">Click below to activate live webcam with real-time neural detection, or drop an image.</p>
+          </div>
+
+          <!-- Scanning scanline effect -->
+          <div class="scan-reticle"></div>
+          <div class="laser-line"></div>
+
+          <!-- Canvas for real-time bounding box -->
+          <canvas id="overlay-canvas" class="absolute inset-0 w-full h-full pointer-events-none z-10"></canvas>
+        </div>
+
+        <!-- Camera Controls -->
+        <div class="grid grid-cols-3 gap-2 mt-3">
+          <button id="btn-toggle-camera" class="py-2 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center justify-center gap-1 shadow">
+            📷 Webcam
+          </button>
+          <button id="btn-toggle-continuous-scan" class="py-2 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center justify-center gap-1 shadow">
+            🔄 Auto-Scan
+          </button>
+          <button id="btn-capture-scan" class="py-2 px-2.5 rounded-lg bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1 shadow-lg shadow-cyan-600/20">
+            ⚡ Snap & Sort
+          </button>
+        </div>
+
+        <!-- Drag & Drop Uploader -->
+        <div id="drop-zone" class="mt-2.5 border-2 border-dashed border-slate-800 hover:border-cyan-500/50 rounded-xl p-3 text-center transition cursor-pointer bg-slate-950/40">
+          <input type="file" id="file-upload" accept="image/*" class="hidden" />
+          <label for="file-upload" class="cursor-pointer flex items-center justify-center gap-2 text-xs text-slate-400 hover:text-cyan-300">
+            <span>📁 Drop waste image or browse local file</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Detected Item Diagnostic Card -->
+      <div class="glass-panel rounded-2xl p-4 flex flex-col">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div>
+            <span class="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Classification Result</span>
+            <h3 id="detected-item-name" class="font-bold text-slate-100 text-base leading-tight mt-0.5">
+              PET Water Bottle (500ml)
+            </h3>
+          </div>
+          <span id="detected-item-category-badge" class="text-xs font-semibold px-3 py-1 rounded-full border bg-emerald-500/20 text-emerald-400 border-emerald-500/50">
+            RECYCLABLE
+          </span>
+        </div>
+
+        <!-- Specs Breakdown -->
+        <div class="grid grid-cols-2 gap-2.5 py-3 text-xs border-b border-slate-800">
+          <div>
+            <span class="text-slate-500 block text-[11px]">Confidence</span>
+            <span id="detected-item-confidence" class="font-mono font-bold text-cyan-400">96.0%</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[11px]">Estimated Weight</span>
+            <span id="detected-item-mass" class="font-mono font-semibold text-slate-200">28 g</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[11px]">Carbon Offset</span>
+            <span id="detected-item-co2" class="font-mono font-bold text-emerald-400">-0.082 kg</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[11px]">Landfill Decomp</span>
+            <span id="detected-item-decomp" class="font-mono text-slate-300">450 years</span>
+          </div>
+        </div>
+
+        <!-- Material Details -->
+        <div class="pt-3">
+          <span class="text-[11px] text-slate-500 block font-medium">Material Composition:</span>
+          <span id="detected-item-material" class="text-xs font-mono text-slate-300 block mt-0.5">
+            Polyethylene Terephthalate (#1 PET)
+          </span>
+
+          <span class="text-[11px] text-slate-500 block font-medium mt-2.5">Routed Sorting Facility:</span>
+          <span id="detected-item-facility" class="text-xs text-cyan-300 block font-medium mt-0.5">
+            Materials Recovery Facility (MRF - Optical Sorting)
+          </span>
+
+          <!-- Immediate Prep Steps -->
+          <div class="mt-3 bg-slate-900/80 rounded-xl p-2.5 border border-slate-800">
+            <span class="text-[11px] font-semibold text-slate-400 block mb-1.5 uppercase tracking-wider">
+              Handling & Preparation:
+            </span>
+            <ul id="detected-item-prep-list" class="space-y-1"></ul>
+          </div>
+
+          <!-- Circular Upcycle Ideas -->
+          <div class="mt-2.5 bg-slate-900/80 rounded-xl p-2.5 border border-amber-500/20">
+            <span class="text-[11px] font-semibold text-amber-400/90 block mb-1.5 uppercase tracking-wider">
+              Circular Upcycle Ideas:
+            </span>
+            <ul id="detected-item-upcycle-list" class="space-y-1"></ul>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============================================== -->
+    <!-- COLUMN 2: DIGITAL TWIN SIMULATION (5 COLS) -->
+    <!-- ============================================== -->
+    <div class="lg:col-span-5 flex flex-col gap-4">
+      
+      <!-- Interactive Digital Twin Schematic -->
+      <div class="glass-panel-glow rounded-2xl p-4 flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+            <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wider">Digital Twin Material Flow</h2>
+          </div>
+          <span class="text-[11px] font-mono text-slate-400">Autonomous Facility Twin</span>
+        </div>
+        <p class="text-xs text-slate-400 mb-3">
+          Live simulated pneumatic conveyor routing materials across 4 circular economy facilities with dynamic bin tracking.
+        </p>
+
+        <!-- Canvas for Animated Material Flow Simulation -->
+        <div class="w-full h-56 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden relative">
+          <canvas id="digital-twin-canvas" class="w-full h-full block"></canvas>
+        </div>
+
+        <!-- 4 Destination Facility Cards with Capacity Fill Bars & Purge -->
+        <div class="grid grid-cols-2 gap-2 mt-3.5">
+          <!-- 1. Recyclable -->
+          <div class="p-2.5 rounded-xl bg-slate-900/90 border border-emerald-500/30 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+                <span class="text-xs font-bold text-emerald-400">MRF Hub</span>
+              </div>
+              <div id="count-recyclable" class="text-sm font-extrabold font-mono text-emerald-300">12</div>
+            </div>
+            <span class="text-[10px] text-slate-400 block mt-0.5">Recyclables (Plastics/Metals)</span>
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+              <div id="bar-recyclable" class="bg-emerald-400 h-full rounded-full transition-all duration-300" style="width: 62%;"></div>
+            </div>
+            <div class="flex items-center justify-between mt-1 text-[9px] text-slate-500">
+              <span>Bin Capacity</span>
+              <button class="btn-purge-bin text-emerald-400 hover:underline" data-bin-cat="recyclable">Purge</button>
+            </div>
+          </div>
+
+          <!-- 2. Reusable -->
+          <div class="p-2.5 rounded-xl bg-slate-900/90 border border-cyan-500/30 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="h-2 w-2 rounded-full bg-cyan-400"></span>
+                <span class="text-xs font-bold text-cyan-400">Reuse Depot</span>
+              </div>
+              <div id="count-reusable" class="text-sm font-extrabold font-mono text-cyan-300">5</div>
+            </div>
+            <span class="text-[10px] text-slate-400 block mt-0.5">Second-Life Circulation</span>
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+              <div id="bar-reusable" class="bg-cyan-400 h-full rounded-full transition-all duration-300" style="width: 45%;"></div>
+            </div>
+            <div class="flex items-center justify-between mt-1 text-[9px] text-slate-500">
+              <span>Bin Capacity</span>
+              <button class="btn-purge-bin text-cyan-400 hover:underline" data-bin-cat="reusable">Purge</button>
+            </div>
+          </div>
+
+          <!-- 3. Biodegradable -->
+          <div class="p-2.5 rounded-xl bg-slate-900/90 border border-lime-500/30 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="h-2 w-2 rounded-full bg-lime-400"></span>
+                <span class="text-xs font-bold text-lime-400">Compost Plant</span>
+              </div>
+              <div id="count-biodegradable" class="text-sm font-extrabold font-mono text-lime-300">5</div>
+            </div>
+            <span class="text-[10px] text-slate-400 block mt-0.5">Anaerobic Biogas / Humus</span>
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+              <div id="bar-biodegradable" class="bg-lime-400 h-full rounded-full transition-all duration-300" style="width: 38%;"></div>
+            </div>
+            <div class="flex items-center justify-between mt-1 text-[9px] text-slate-500">
+              <span>Bin Capacity</span>
+              <button class="btn-purge-bin text-lime-400 hover:underline" data-bin-cat="biodegradable">Purge</button>
+            </div>
+          </div>
+
+          <!-- 4. Hazardous -->
+          <div class="p-2.5 rounded-xl bg-slate-900/90 border border-rose-500/30 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="h-2 w-2 rounded-full bg-rose-400"></span>
+                <span class="text-xs font-bold text-rose-400">Hazard Vault</span>
+              </div>
+              <div id="count-hazardous" class="text-sm font-extrabold font-mono text-rose-300">2</div>
+            </div>
+            <span class="text-[10px] text-slate-400 block mt-0.5">Quarantine Remediation</span>
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+              <div id="bar-hazardous" class="bg-rose-400 h-full rounded-full transition-all duration-300" style="width: 24%;"></div>
+            </div>
+            <div class="flex items-center justify-between mt-1 text-[9px] text-slate-500">
+              <span>Bin Capacity</span>
+              <button class="btn-purge-bin text-rose-400 hover:underline" data-bin-cat="hazardous">Purge</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Material Audit Trail Log -->
+      <div class="glass-panel rounded-2xl p-4 flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-2.5">
+          <h3 class="font-bold text-xs uppercase tracking-wider text-slate-300">
+            Material Routing Audit Log
+          </h3>
+          <div class="flex items-center gap-2">
+            <button id="btn-export-csv" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 transition">
+              CSV Export
+            </button>
+            <button id="btn-export-json" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition">
+              JSON Export
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto flex-1 max-h-52 overflow-y-auto pr-1">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="text-[11px] font-mono text-slate-500 border-b border-slate-800 bg-slate-900/50 sticky top-0">
+                <th class="py-1.5 px-3">Time</th>
+                <th class="py-1.5 px-3">Material</th>
+                <th class="py-1.5 px-3">Category</th>
+                <th class="py-1.5 px-3">Chute</th>
+                <th class="py-1.5 px-3">Status</th>
+              </tr>
+            </thead>
+            <tbody id="audit-log-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============================================== -->
+    <!-- COLUMN 3: GENAI ADVISOR & SPECIMEN LIBRARY (3 COLS) -->
+    <!-- ============================================== -->
+    <div class="lg:col-span-3 flex flex-col gap-4">
+      
+      <!-- GenAI Circular Advisor Chat -->
+      <div class="glass-panel rounded-2xl p-4 flex flex-col h-80">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="text-base">✨</span>
+            <h3 class="font-bold text-xs uppercase tracking-wider text-slate-200">
+              GenAI Circular Advisor
+            </h3>
+          </div>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800/60">
+            Gemini GenAI
+          </span>
+        </div>
+
+        <!-- Chat messages container -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto py-2 pr-1 space-y-2"></div>
+
+        <!-- Preset prompt pills -->
+        <div class="flex flex-wrap gap-1 py-1.5 border-t border-slate-800">
+          <button class="preset-prompt-pill text-[10px] px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" data-prompt="How do I safely dispose of swollen lithium batteries?">
+            🔋 Battery Hazard?
+          </button>
+          <button class="preset-prompt-pill text-[10px] px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" data-prompt="Can I recycle greasy pizza boxes?">
+            🍕 Pizza box grease?
+          </button>
+          <button class="preset-prompt-pill text-[10px] px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" data-prompt="What are creative upcycles for empty glass coffee jars?">
+            💡 Upcycle glass jars?
+          </button>
+        </div>
+
+        <!-- Chat Input Field -->
+        <div class="flex items-center gap-1.5 pt-1.5">
+          <input 
+            type="text" 
+            id="chat-input" 
+            placeholder="Ask circular economy AI..." 
+            class="flex-1 bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none"
+          />
+          <button id="chat-send-btn" class="p-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition px-3">
+            Send
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Test Specimen Library -->
+      <div class="glass-panel rounded-2xl p-4 flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-bold text-xs uppercase tracking-wider text-slate-300">
+            Quick-Test Library
+          </h3>
+          <span class="text-[10px] text-slate-500">1-Click Test</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mb-2.5">
+          Select any specimen to test optical recognition, digital twin routing, and upcycle advice:
+        </p>
+
+        <!-- Specimen Grid -->
+        <div id="sample-library-grid" class="grid grid-cols-1 gap-2 overflow-y-auto max-h-72 pr-1"></div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-slate-800/80 px-6 py-3 mt-auto bg-slate-950/70 text-center text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="font-semibold text-slate-400">Code Clash 2.0</span>
+        <span>•</span>
+        <span>Problem Statement 06: Smart Recycling Assistant</span>
+      </div>
+      <div class="flex items-center gap-3 font-mono text-[11px]">
+        <span>[Computer Vision]</span>
+        <span>[Digital Twin]</span>
+        <span>[GenAI]</span>
+        <span>[Circular Economy]</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- App Bootstrap JS -->
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

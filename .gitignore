@@ -1,0 +1,21 @@
+# Dependencies (none required, but just in case)
+node_modules/
+
+# Secrets — never commit API keys
+.env
+.env.local
+.env*.local
+*.key
+
+# Vercel
+.vercel/
+
+# Local runtime data (regenerated from defaults on start; ephemeral on Vercel)
+data/recycling_db.json
+data/temp_scans/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
