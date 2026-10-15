@@ -83,6 +83,11 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { success: true, ...data });
   }
 
+  // 1b. GET /api/v1/health  (confirms whether the Gemini LLM is wired up)
+  if (req.method === 'GET' && pathname === '/api/v1/health') {
+    return sendJson(res, 200, { success: true, llmEnabled: genAi.isLlmEnabled() });
+  }
+
   // 2. POST /api/v1/scan/item
   if (req.method === 'POST' && pathname === '/api/v1/scan/item') {
     try {
