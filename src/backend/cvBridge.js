@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 // Resolve the Python executable portably:
 //   1. Honor an explicit override via the PYTHON_PATH env var.
@@ -12,11 +13,20 @@ const PYTHON_PATH =
   process.env.PYTHON_PATH ||
   (process.platform === 'win32' ? 'py' : 'python3');
 const SCRIPT_PATH = path.join(__dirname, '..', '..', 'cv_engine.py');
-const TEMP_DIR = path.join(__dirname, '..', '..', 'data', 'temp_scans');
+// On Vercel the project dir is read-only; only the OS temp dir is writable.
+// (On Vercel the Python path is skipped entirely, so this is just a safe default.)
+const TEMP_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'temp_scans')
+  : path.join(__dirname, '..', '..', 'data', 'temp_scans');
 
-// Ensure temp dir exists
-if (!fs.existsSync(TEMP_DIR)) {
-  fs.mkdirSync(TEMP_DIR, { recursive: true });
+// Ensure temp dir exists — never throw at module load (serverless FS is read-only),
+// otherwise requiring this module would crash the whole function.
+try {
+  if (!fs.existsSync(TEMP_DIR)) {
+    fs.mkdirSync(TEMP_DIR, { recursive: true });
+  }
+} catch (e) {
+  /* ignore: on Vercel the image path short-circuits before using TEMP_DIR */
 }
 
 /**
