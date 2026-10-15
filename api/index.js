@@ -1,15 +1,13 @@
 /**
  * Vercel serverless API for the Smart Recycling Assistant.
  *
- * Vercel is serverless, so the always-on Node server (server.js, used for local
- * dev) can't run here. This single catch-all function handles every /api/v1/*
- * route by reusing the same backend modules.
+ * All /api/v1/* routes are rewritten to this single function by vercel.json.
+ * The original path is passed through as the `__p` query param (and we also
+ * fall back to req.url), so routing works regardless of how Vercel sets req.url.
  *
- * Notes for Vercel:
- *  - Persistence is ephemeral (storage writes to the OS temp dir; see storage.js).
- *    The browser holds the authoritative live state, so this is fine for demos.
- *  - The Gemini API key is read from the GEMINI_API_KEY environment variable
- *    (set it in Vercel → Settings → Environment Variables). Never committed.
+ * Reuses the same backend modules as the local server (server.js).
+ * Persistence is ephemeral on Vercel (temp dir); the Gemini key is read from
+ * the GEMINI_API_KEY environment variable (set in Vercel project settings).
  */
 
 const url = require('url');
@@ -50,8 +48,14 @@ function readBody(req) {
 
 module.exports = async (req, res) => {
   const parsed = url.parse(req.url, true);
-  const pathname = parsed.pathname;
   const q = parsed.query || {};
+
+  // Resolve the real API path: prefer the __p param injected by vercel.json,
+  // fall back to the raw pathname (covers local use / direct invocation).
+  let pathname = parsed.pathname;
+  if (q.__p) {
+    pathname = '/api/' + String(q.__p).replace(/^\/+/, '');
+  }
 
   // CORS preflight
   if (req.method === 'OPTIONS') {
@@ -63,24 +67,20 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // GET /api/v1/telemetry
     if (req.method === 'GET' && pathname === '/api/v1/telemetry') {
       return sendJson(res, 200, { success: true, ...storage.getTelemetry() });
     }
 
-    // GET /api/v1/health  (handy for confirming LLM wiring in the deploy)
     if (req.method === 'GET' && pathname === '/api/v1/health') {
       return sendJson(res, 200, { success: true, llmEnabled: genAi.isLlmEnabled() });
     }
 
-    // POST /api/v1/scan/item
     if (req.method === 'POST' && pathname === '/api/v1/scan/item') {
       const body = await readBody(req);
       const result = storage.saveScanRecord(body);
       return sendJson(res, 200, { success: true, ...result });
     }
 
-    // POST /api/v1/scan/image
     if (req.method === 'POST' && pathname === '/api/v1/scan/image') {
       const body = await readBody(req);
       const cvResult = await cvBridge.analyzeImageWithPython(body.image, body.filename || 'uploaded.jpg');
@@ -103,28 +103,24 @@ module.exports = async (req, res) => {
       });
     }
 
-    // POST /api/v1/facilities/purge
     if (req.method === 'POST' && pathname === '/api/v1/facilities/purge') {
       const body = await readBody(req);
       const result = storage.purgeFacilityBin(body.category);
       return sendJson(res, result.success ? 200 : 400, result);
     }
 
-    // POST /api/v1/genai/advise
     if (req.method === 'POST' && pathname === '/api/v1/genai/advise') {
       const body = await readBody(req);
       const advice = await genAi.generateRecommendations(body);
       return sendJson(res, 200, { success: true, advice });
     }
 
-    // POST /api/v1/genai/chat
     if (req.method === 'POST' && pathname === '/api/v1/genai/chat') {
       const body = await readBody(req);
       const reply = await genAi.processChatQuery(body.query);
       return sendJson(res, 200, { success: true, ...reply });
     }
 
-    // GET /api/v1/logs
     if (req.method === 'GET' && pathname === '/api/v1/logs') {
       const limit = parseInt(q.limit, 10) || 50;
       const category = q.category || null;
@@ -132,7 +128,6 @@ module.exports = async (req, res) => {
       return sendJson(res, 200, { success: true, count: logs.length, logs });
     }
 
-    // GET /api/v1/logs/export
     if (req.method === 'GET' && pathname === '/api/v1/logs/export') {
       const format = q.format === 'csv' ? 'csv' : 'json';
       const exportData = storage.exportScans(format);
@@ -143,7 +138,7 @@ module.exports = async (req, res) => {
       return res.end(exportData.data);
     }
 
-    return sendJson(res, 404, { success: false, error: 'Not found' });
+    return sendJson(res, 404, { success: false, error: 'Not found', path: pathname });
   } catch (err) {
     return sendJson(res, 500, { success: false, error: err.message });
   }
